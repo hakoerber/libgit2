@@ -4,6 +4,7 @@
 
 #define COMMON_REPO "testrepo.git"
 #define WORKTREE_REPO "worktree"
+#define WORKTREE_REPO_WITH_SUBDIRECTORY "worktree/subdir"
 
 static git_repository *g_repo;
 
@@ -69,4 +70,51 @@ void test_worktree_bare__repository_path(void)
 
 	git_repository_free(wtrepo);
 	git_worktree_free(wt);
+}
+
+void test_worktree_bare__add_with_subdirectory(void)
+{
+	git_worktree *wt;
+	git_repository *wtrepo;
+	git_strarray wts;
+
+	cl_git_pass(git_worktree_add(&wt, g_repo, "name", WORKTREE_REPO_WITH_SUBDIRECTORY, NULL));
+
+	cl_git_pass(git_worktree_list(&wts, g_repo));
+	cl_assert_equal_i(wts.count, 1);
+
+	cl_git_pass(git_worktree_validate(wt));
+
+	cl_git_pass(git_repository_open(&wtrepo, WORKTREE_REPO_WITH_SUBDIRECTORY));
+	cl_assert_equal_i(0, git_repository_is_bare(wtrepo));
+	cl_assert_equal_i(1, git_repository_is_worktree(wtrepo));
+
+	git_strarray_dispose(&wts);
+	git_worktree_free(wt);
+	git_repository_free(wtrepo);
+}
+
+void test_worktree_bare__subdirectories_with_same_base(void)
+{
+	DIR *folder;
+	struct dirent *entry;
+
+	git_worktree *wt1, *wt2;
+	git_strarray wts;
+
+	cl_git_pass(git_worktree_add(&wt1, g_repo, "name1", "worktree/subdir1", NULL));
+	cl_git_pass(git_worktree_add(&wt2, g_repo, "name2", "worktree/subdir2", NULL));
+
+	fprintf(stderr, "NONE\n");
+	folder = opendir("testrepo.git/worktrees");
+	cl_assert(folder != NULL);
+	while ((entry = readdir(folder))) {
+		fprintf(stderr, "file: %s\n\n", entry->d_name);
+	}
+
+	cl_git_pass(git_worktree_list(&wts, g_repo));
+	cl_assert_equal_i(wts.count, 2);
+
+	cl_git_pass(git_worktree_validate(wt1));
+	cl_git_pass(git_worktree_validate(wt2));
 }

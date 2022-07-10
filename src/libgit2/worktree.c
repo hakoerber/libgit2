@@ -15,7 +15,7 @@
 #include "git2/commit.h"
 #include "git2/worktree.h"
 
-static bool is_worktree_dir(const char *dir)
+static bool is_worktree_handle(const char *dir)
 {
 	git_str buf = GIT_STR_INIT;
 	int error;
@@ -54,11 +54,20 @@ int git_worktree_list(git_strarray *wts, git_repository *repo)
 
 	len = path.size;
 
+	/* TODO: instead of returning the path in .git/worktrees, we have to
+	 * parse gitdir inside .git/worktrees/<worktree>/ which points to the
+	 * correct path
+	 *
+	 * It is the absolute path to the worktree path, including .git as the
+	 * last component
+	 *
+	 * git_worktree__read_link() should help with that.
+	 */
 	git_vector_foreach(&worktrees, i, worktree) {
 		git_str_truncate(&path, len);
 		git_str_puts(&path, worktree);
 
-		if (!is_worktree_dir(path.ptr)) {
+		if (!is_worktree_handle(path.ptr)) {
 			git_vector_remove(&worktrees, i);
 			git__free(worktree);
 		}
@@ -132,7 +141,7 @@ static int open_worktree_dir(git_worktree **out, const char *parent, const char 
 	git_worktree *wt = NULL;
 	int error = 0;
 
-	if (!is_worktree_dir(dir)) {
+	if (!is_worktree_handle(dir)) {
 		error = -1;
 		goto out;
 	}
@@ -145,6 +154,9 @@ static int open_worktree_dir(git_worktree **out, const char *parent, const char 
 		goto out;
 	}
 
+	/* TODO this should be fine, as `name` is just copied through this
+	 * function
+	 */
 	if ((wt->name = git__strdup(name)) == NULL ||
 	    (wt->commondir_path = git_worktree__read_link(dir, "commondir")) == NULL ||
 	    (wt->gitlink_path = git_worktree__read_link(dir, "gitdir")) == NULL ||
@@ -184,6 +196,9 @@ int git_worktree_lookup(git_worktree **out, git_repository *repo, const char *na
 
 	*out = NULL;
 
+	/* TODO this needs to be changed to also use the mtaching function, same
+	 * as in git_worktree_list
+	 */
 	if ((error = git_str_join3(&path, '/', repo->commondir, "worktrees", name)) < 0)
 		goto out;
 
@@ -219,6 +234,8 @@ int git_worktree_open_from_repository(git_worktree **out, git_repository *repo)
 		goto out;
 
 	/* The name is defined by the last component in '.git/worktree/%s' */
+	/* TODO this is actually wrong, it needs to use the matching logic as
+	 * well */
 	name = git_fs_path_basename(gitdir);
 
 	if ((error = open_worktree_dir(out, parent.ptr, gitdir, name)) < 0)
@@ -249,7 +266,7 @@ int git_worktree_validate(const git_worktree *wt)
 {
 	GIT_ASSERT_ARG(wt);
 
-	if (!is_worktree_dir(wt->gitdir_path)) {
+	if (!is_worktree_handle(wt->gitdir_path)) {
 		git_error_set(GIT_ERROR_WORKTREE,
 			"worktree gitdir ('%s') is not valid",
 			wt->gitlink_path);
@@ -296,6 +313,10 @@ int git_worktree_add_init_options(git_worktree_add_options *opts,
 }
 #endif
 
+/* Name is used:
+// * As the dir under `.git/worktrees`
+// * As the name of the branch if nothing explicit is given
+*/
 int git_worktree_add(git_worktree **out, git_repository *repo,
 	const char *name, const char *worktree,
 	const git_worktree_add_options *opts)
@@ -307,6 +328,16 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 	git_checkout_options coopts;
 	git_worktree_add_options wtopts = GIT_WORKTREE_ADD_OPTIONS_INIT;
 	int err;
+
+	git_str private_subdir_tmp = GIT_STR_INIT;
+	git_str private_subdir_name = GIT_STR_INIT;
+
+	/* Make sure to adapt the length of `suffixstrbuf` below if you change
+	 * the type here */
+	int8_t suffix = 1;
+	/* uint8 maximum value is 255, which is 3 characters, plus one for the
+	   null bytes */
+	char suffixstrbuf[4];
 
 	GIT_ERROR_CHECK_VERSION(
 		opts, GIT_WORKTREE_ADD_OPTIONS_VERSION, "git_worktree_add_options");
@@ -337,21 +368,50 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 		}
 	}
 
-	/* Create gitdir directory ".git/worktrees/<name>" */
+	/* Create gitdir directory ".git/worktrees/$(basename <name>)", with
+	 * additional numbered suffixes in case of conflicts
+	 * */
 	if ((err = git_str_joinpath(&gitdir, repo->commondir, "worktrees")) < 0)
 		goto out;
 	if (!git_fs_path_exists(gitdir.ptr))
 		if ((err = git_futils_mkdir(gitdir.ptr, 0755, GIT_MKDIR_EXCL)) < 0)
 			goto out;
-	if ((err = git_str_joinpath(&gitdir, gitdir.ptr, name)) < 0)
+
+	if ((err = git_fs_path_basename_r(&private_subdir_name, worktree)) < 0)
 		goto out;
+
+	if ((err = git_str_puts(&private_subdir_tmp, gitdir.ptr)) < 0)
+		goto out;
+
+	while (true) {
+		if ((err = git_str_joinpath(&private_subdir_tmp, gitdir.ptr, private_subdir_name.ptr)) < 0)
+			goto out;
+		if (git_fs_path_exists(private_subdir_tmp.ptr)) {
+			if ((err = sprintf(suffixstrbuf, "%d", suffix)) < 0)
+				goto out;
+			if ((err = git_str_puts(&private_subdir_name, suffixstrbuf)) < 0)
+				goto out;
+			suffix++;
+			continue;
+		} else {
+			break;
+		}
+	}
+	gitdir = private_subdir_tmp;
+
 	if ((err = git_futils_mkdir(gitdir.ptr, 0755, GIT_MKDIR_EXCL)) < 0)
 		goto out;
 	if ((err = git_fs_path_prettify_dir(&gitdir, gitdir.ptr, NULL)) < 0)
 		goto out;
 
 	/* Create worktree work dir */
-	if ((err = git_futils_mkdir(worktree, 0755, GIT_MKDIR_EXCL)) < 0)
+	/* not sure about just yoloing the creation here with _PATH. maybe
+	 * iterate?
+	 *
+	 * Note that EXCL is not possilbe here, as a subdirectory may be shared
+	 * by multiple worktrees and therefore already exist
+	 */
+	if ((err = git_futils_mkdir(worktree, 0755, GIT_MKDIR_EXCL | GIT_MKDIR_PATH)) < 0)
 		goto out;
 	if ((err = git_fs_path_prettify_dir(&wddir, worktree, NULL)) < 0)
 		goto out;
@@ -371,11 +431,14 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 		git_str_clear(&buf);
 	}
 
+	printf("gitdir: %s\n", gitdir.ptr);
+
 	/* Create worktree .git file */
 	if ((err = git_str_printf(&buf, "gitdir: %s\n", gitdir.ptr)) < 0)
 		goto out;
 	if ((err = write_wtfile(wddir.ptr, ".git", &buf)) < 0)
 		goto out;
+
 
 	/* Create gitdir files */
 	if ((err = git_fs_path_prettify_dir(&buf, repo->commondir, NULL) < 0)
@@ -386,6 +449,7 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 	    || (err = git_str_putc(&buf, '\n')) < 0
 	    || (err = write_wtfile(gitdir.ptr, "gitdir", &buf)) < 0)
 		goto out;
+
 
 	/* Set up worktree reference */
 	if (wtopts.ref) {
@@ -401,18 +465,26 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 	}
 
 	/* Set worktree's HEAD */
-	if ((err = git_repository_create_head(gitdir.ptr, git_reference_name(ref))) < 0)
+	if ((err = git_repository_create_head(gitdir.ptr, git_reference_name(ref))) < 0)  {
+		printf("error in create_head\n");
 		goto out;
-	if ((err = git_repository_open(&wt, wddir.ptr)) < 0)
+	}
+	if ((err = git_repository_open(&wt, wddir.ptr)) < 0) {
+		printf("error in repo_open\n");
 		goto out;
+	}
 
 	/* Checkout worktree's HEAD */
-	if ((err = git_checkout_head(wt, &coopts)) < 0)
+	if ((err = git_checkout_head(wt, &coopts)) < 0) {
 		goto out;
+		printf("error in checkout_head\n");
+	}
 
 	/* Load result */
-	if ((err = git_worktree_lookup(out, repo, name)) < 0)
+	if ((err = git_worktree_lookup(out, repo, name)) < 0){
+		printf("error in lookup\n");
 		goto out;
+	}
 
 out:
 	git_str_dispose(&gitdir);
