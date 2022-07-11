@@ -15,26 +15,82 @@
 #include "git2/commit.h"
 #include "git2/worktree.h"
 
-static bool is_worktree_handle(const char *dir)
+static bool is_worktree_private_directory(git_str *path) {
+	return git_fs_path_contains_file(path, "commondir")
+		&& git_fs_path_contains_file(path, "gitdir")
+		&& git_fs_path_contains_file(path, "HEAD");
+
+}
+
+static bool is_worktree_handle(const char *handle, const char *base)
 {
 	git_str buf = GIT_STR_INIT;
 	int error;
 
-	if (git_str_sets(&buf, dir) < 0)
-		return -1;
+	printf("---------------------------------------\n");
+	printf("is_worktree_handle() handle: %s\n", handle);
+	printf("is_worktree_handle() base  : %s\n", base);
+	printf("---------------------------------------\n");
+	printf("is_worktree_handle(): looking for %s in %s\n", handle, base);
 
-	error = git_fs_path_contains_file(&buf, "commondir")
-		&& git_fs_path_contains_file(&buf, "gitdir")
-		&& git_fs_path_contains_file(&buf, "HEAD");
+ 	if ((error = git_str_join3(&buf, '/', base, "worktrees", handle)) < 0)
+		goto out;
 
+	printf("is_worktree_handle(): should be %s\n", buf.ptr);
+
+
+	error = is_worktree_private_directory(&buf);
+
+out:
 	git_str_dispose(&buf);
+	return error;
+}
+
+/* Returns the absolute path to the worktree's working directory */
+static int get_worktree_gitdir_from_private_directory(git_str *out, git_str *directory) {
+	git_str buf = GIT_STR_INIT;
+	int error;
+
+	GIT_ASSERT_ARG(directory);
+
+	printf("working in %s\n", buf.ptr);
+	if (!is_worktree_private_directory(directory)) {
+		printf("get_path_from_handle(): not a worktree?\n");
+		error = -1;
+		goto out;
+	}
+	printf("get_path_from_handle(): its a worktree!!!\n");
+
+ 	/* if ((error = git_str_join3(&buf, '/', base, "worktrees", handle)) < 0) */
+		/* goto out; */
+
+	/* printf("get_path_from_handle(): getting gitdir from contents of %s\n", buf.ptr); */
+
+	if ((error = git_str_sets(&buf, git_worktree__read_link(directory->ptr, "gitdir")) < 0))
+		goto out;
+
+	printf("get_path_from_handle(): read gitdir: %s\n", buf.ptr);
+
+	if ((error = git_fs_path_apply_relative(&buf, "..")) < 0)
+		goto out;
+
+	printf("get_path_from_handle(): buffer: %s\n", buf.ptr);
+
+	if ((error = git_str_sets(out, buf.ptr)) < 0)
+		goto out;
+
+	printf("get_path_from_handle(): outparam: %s\n", out->ptr);
+out:
+	git_str_dispose(&buf);
+
+	printf("get_path_from_handle(): error: %d\n", error);
 	return error;
 }
 
 int git_worktree_list(git_strarray *wts, git_repository *repo)
 {
 	git_vector worktrees = GIT_VECTOR_INIT;
-	git_str path = GIT_STR_INIT;
+	git_str path = GIT_STR_INIT, worktree_dir = GIT_STR_INIT;
 	char *worktree;
 	size_t i, len;
 	int error;
@@ -67,9 +123,17 @@ int git_worktree_list(git_strarray *wts, git_repository *repo)
 		git_str_truncate(&path, len);
 		git_str_puts(&path, worktree);
 
-		if (!is_worktree_handle(path.ptr)) {
+		printf("git_worktree_list(): found directory: %s\n", worktree);
+
+		if (!is_worktree_private_directory(&path)) {
+			printf("git_worktree_list(): %s is not a worktree handle\n", worktree);
 			git_vector_remove(&worktrees, i);
 			git__free(worktree);
+		} else {
+			if ((error = get_worktree_gitdir_from_private_directory(&worktree_dir, &path)) < 0)
+				goto exit;
+			if ((error = git_vector_set(NULL, &worktrees, i, &worktree_dir)) < 0)
+				goto exit;
 		}
 	}
 
@@ -135,16 +199,32 @@ out:
 	return err;
 }
 
+/*
+ * parent: the root of the "actual" git repository
+ * dir: the working directory of the worktree
+ * dir: name: nothing. meaningless. just loop it through to the struct
+*/
 static int open_worktree_dir(git_worktree **out, const char *parent, const char *dir, const char *name)
 {
-	git_str gitdir = GIT_STR_INIT;
+	git_str gitdir = GIT_STR_INIT, worktree_dir = GIT_STR_INIT;
 	git_worktree *wt = NULL;
 	int error = 0;
 
-	if (!is_worktree_handle(dir)) {
+	printf("open_worktree_dir(): hi!\n");
+	printf("open_worktree_dir(): parent: %s\n", parent);
+	printf("open_worktree_dir(): dir:    %s\n", dir);
+	printf("open_worktree_dir(): name:   %s\n", name);
+
+	if (!is_worktree_handle(name, parent)) {
+		printf("open_worktree_dir(): %s is not a valid handle!\n", name);
 		error = -1;
 		goto out;
 	}
+
+	/* if ((error = get_worktree_gitdir_from_private_directory(&worktree_dir, name, parent))) */
+	/* 	goto out; */
+
+	printf("open_worktree_dir(): the worktree private dir is in %s\n", worktree_dir.ptr);
 
 	if ((error = git_path_validate_length(NULL, dir)) < 0)
 		goto out;
@@ -154,14 +234,33 @@ static int open_worktree_dir(git_worktree **out, const char *parent, const char 
 		goto out;
 	}
 
+	printf("open_worktree_dir(): validation ok\n");
+
 	/* TODO this should be fine, as `name` is just copied through this
 	 * function
 	 */
-	if ((wt->name = git__strdup(name)) == NULL ||
-	    (wt->commondir_path = git_worktree__read_link(dir, "commondir")) == NULL ||
-	    (wt->gitlink_path = git_worktree__read_link(dir, "gitdir")) == NULL ||
-	    (parent && (wt->parent_path = git__strdup(parent)) == NULL) ||
-	    (wt->worktree_path = git_fs_path_dirname(wt->gitlink_path)) == NULL) {
+	if ((wt->name = git__strdup(name)) == NULL) {
+		printf("open_worktree_dir(): dont like the input, wt->name\n");
+		error = -1;
+		goto out;
+	}
+	if ((wt->commondir_path = git_worktree__read_link(worktree_dir.ptr, "commondir")) == NULL) {
+		printf("open_worktree_dir(): dont like the input, wt->commondir\n");
+		error = -1;
+		goto out;
+	}
+	if ((wt->gitlink_path = git_worktree__read_link(dir, "gitdir")) == NULL) {
+		printf("open_worktree_dir(): dont like the input, wt->gitlink_path\n");
+		error = -1;
+		goto out;
+	}
+	if ((parent && (wt->parent_path = git__strdup(parent)) == NULL)) {
+		printf("open_worktree_dir(): dont like the input, wt->parent_path\n");
+		error = -1;
+		goto out;
+	}
+	if ((wt->worktree_path = git_fs_path_dirname(wt->gitlink_path)) == NULL) {
+		printf("open_worktree_dir(): dont like the input, wt->worktree_path\n");
 		error = -1;
 		goto out;
 	}
@@ -178,9 +277,12 @@ static int open_worktree_dir(git_worktree **out, const char *parent, const char 
 	*out = wt;
 
 out:
+	printf("open_worktree_dir(): at goto mark out\n");
 	if (error)
 		git_worktree_free(wt);
+	printf("open_worktree_dir(): freeing strings\n");
 	git_str_dispose(&gitdir);
+	git_str_dispose(&worktree_dir);
 
 	return error;
 }
@@ -199,8 +301,10 @@ int git_worktree_lookup(git_worktree **out, git_repository *repo, const char *na
 	/* TODO this needs to be changed to also use the mtaching function, same
 	 * as in git_worktree_list
 	 */
-	if ((error = git_str_join3(&path, '/', repo->commondir, "worktrees", name)) < 0)
-		goto out;
+	printf("git_worktree_lookup(): get_path_from_handle() \n");
+	/* if ((error = get_path_from_handle(&path, name, repo->workdir) < 0)) */
+	/* 	goto out; */
+	printf("git_worktree_lookup(): get_path_from_handle() done, got %s\n", path.ptr);
 
 	if ((error = (open_worktree_dir(out, git_repository_workdir(repo), path.ptr, name))) < 0)
 		goto out;
@@ -208,6 +312,7 @@ int git_worktree_lookup(git_worktree **out, git_repository *repo, const char *na
 out:
 	git_str_dispose(&path);
 
+	printf("lookup() error: %d\n", error);
 	if (error)
 		git_worktree_free(wt);
 
@@ -266,7 +371,7 @@ int git_worktree_validate(const git_worktree *wt)
 {
 	GIT_ASSERT_ARG(wt);
 
-	if (!is_worktree_handle(wt->gitdir_path)) {
+	if (!is_worktree_handle(wt->gitdir_path, wt->commondir_path)) {
 		git_error_set(GIT_ERROR_WORKTREE,
 			"worktree gitdir ('%s') is not valid",
 			wt->gitlink_path);
@@ -392,12 +497,13 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 			if ((err = git_str_puts(&private_subdir_name, suffixstrbuf)) < 0)
 				goto out;
 			suffix++;
-			continue;
 		} else {
 			break;
 		}
 	}
-	gitdir = private_subdir_tmp;
+
+	if ((err = git_str_sets(&gitdir, private_subdir_tmp.ptr)) < 0)
+		goto out;
 
 	if ((err = git_futils_mkdir(gitdir.ptr, 0755, GIT_MKDIR_EXCL)) < 0)
 		goto out;
@@ -490,6 +596,8 @@ out:
 	git_str_dispose(&gitdir);
 	git_str_dispose(&wddir);
 	git_str_dispose(&buf);
+	git_str_dispose(&private_subdir_name);
+	git_str_dispose(&private_subdir_tmp);
 	git_reference_free(ref);
 	git_reference_free(head);
 	git_commit_free(commit);
@@ -601,6 +709,7 @@ int git_worktree_is_locked(git_buf *reason, const git_worktree *wt)
 
 const char *git_worktree_name(const git_worktree *wt)
 {
+	/* TODO this should return the PATH */
 	GIT_ASSERT_ARG_WITH_RETVAL(wt, NULL);
 	return wt->name;
 }
@@ -686,6 +795,7 @@ int git_worktree_prune(git_worktree *wt,
 	}
 
 	/* Delete gitdir in parent repository */
+	/* TODO wrong, this cannot just be the name. do the lookup! */
 	if ((err = git_str_join3(&path, '/', wt->commondir_path, "worktrees", wt->name)) < 0)
 		goto out;
 	if (!git_fs_path_exists(path.ptr))

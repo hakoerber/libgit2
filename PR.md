@@ -1,17 +1,9 @@
-* update test
-  * add test that currently fails on worktree path with slash
-  * add test that still fails with worktree NAME with slash
-  * add test that still fails with worktree name NULL, path with slash
-* document that `NULL` should be used for name
-*
-
 In here, I will not refer to a "worktree name" any more, as there isn't really
-such a thing. There is a path (i.e. whereever the working), a private
+such a thing. There is a path (i.e. whereever the working tree is), a private
 subdirectory under `.git/worktrees`, and the name of the **branch** that is
 checked out in the worktree. I'll refer to the directory in `.git/worktrees` as
-the worktree's "handle". It's effectively an opaquely named directory, the
-name does not really matter and cannot be used to map back to the worktree's
-path.
+the worktree's "handle". It's effectively an opaquely named directory, the name
+does not really matter and cannot be used to map back to the worktree's path.
 
 This means that the "reverse mapping" from a worktree name to its path is no
 longer trivial: Instead, we need to look through all subdirectories of
@@ -33,14 +25,14 @@ This functionality is encapsulated in a new internal function:
 `char *git_worktree__get_path_from_handle(const char *handle)`
 
 It expects the handle of the worktree, looks it up under `.git/worktrees`,
-finds the actual worktree paths, does the reverse verification as described above.
-It internally uses `git_worktree__read_link()` to read `gitdir`.
+finds the actual worktree paths, does the reverse verification as described
+above. It internally uses `git_worktree__read_link()` to read `gitdir`.
 
 This functionality is encaspulated in a new function that maps from a path to
 its worktree path.
 
-* The `name` parameter to `git_add_worktree()` is used for the directory name in
-  `.git/worktrees` (which will be changed as discussed) and for the name of
+* The `name` parameter to `git_add_worktree()` is used for the directory name
+  in `.git/worktrees` (which will be changed as discussed) and for the name of
   the branch to check out. The second will be kept, the first will be changed
   to use basename plus the suffix on conflicts.
 

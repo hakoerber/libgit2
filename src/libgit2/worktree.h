@@ -35,5 +35,6 @@ struct git_worktree {
 };
 
 char *git_worktree__read_link(const char *base, const char *file);
+int git_worktree__get_path_from_handle(git_str *path, const char *handle, const git_repository *repo);
 
 #endif

@@ -166,6 +166,7 @@ int git_str_set(git_str *buf, const void *data, size_t len)
 	return 0;
 }
 
+/* copies string into buf */
 int git_str_sets(git_str *buf, const char *string)
 {
 	return git_str_set(buf, string, string ? strlen(string) : 0);
@@ -626,6 +627,7 @@ void git_str_swap(git_str *str_a, git_str *str_b)
 	*str_b = t;
 }
 
+/* creates a new owned copy of buf */
 char *git_str_detach(git_str *buf)
 {
 	char *data = buf->ptr;
