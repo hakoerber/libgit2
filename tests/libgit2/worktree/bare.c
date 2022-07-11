@@ -63,7 +63,7 @@ void test_worktree_bare__repository_path(void)
 	cl_assert_equal_s(git_worktree_path(wt), cl_git_sandbox_path(0, WORKTREE_REPO, NULL));
 
 	cl_git_pass(git_repository_open(&wtrepo, WORKTREE_REPO));
-	cl_assert_equal_s(git_repository_path(wtrepo), cl_git_sandbox_path(1, COMMON_REPO, "worktrees", "name", NULL));
+	cl_assert_equal_s(git_repository_path(wtrepo), cl_git_sandbox_path(1, COMMON_REPO, "worktrees", "worktree", NULL));
 
 	cl_assert_equal_s(git_repository_commondir(g_repo), git_repository_commondir(wtrepo));
 	cl_assert_equal_s(git_repository_workdir(wtrepo), cl_git_sandbox_path(1, WORKTREE_REPO, NULL));
@@ -105,11 +105,11 @@ void test_worktree_bare__subdirectories_with_same_base(void)
 	cl_git_pass(git_worktree_add(&wt1, g_repo, "name1", "worktree/subdir1", NULL));
 	cl_git_pass(git_worktree_add(&wt2, g_repo, "name2", "worktree/subdir2", NULL));
 
-	fprintf(stderr, "NONE\n");
+	/* fprintf(stderr, "NONE\n"); */
 	folder = opendir("testrepo.git/worktrees");
 	cl_assert(folder != NULL);
 	while ((entry = readdir(folder))) {
-		fprintf(stderr, "file: %s\n\n", entry->d_name);
+		/* fprintf(stderr, "file: %s\n\n", entry->d_name); */
 	}
 
 	cl_git_pass(git_worktree_list(&wts, g_repo));

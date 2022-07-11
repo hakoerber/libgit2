@@ -229,7 +229,8 @@ int git_worktree_lookup(git_worktree **out, git_repository *repo, const char *na
 	int error, found;
 
 	git_vector worktrees = GIT_VECTOR_INIT;
-	git_str worktree_target = GIT_STR_INIT, path = GIT_STR_INIT, worktree_dir = GIT_STR_INIT;
+	git_str path = GIT_STR_INIT, worktree_dir = GIT_STR_INIT;
+	char *basename1, *basename2;
 	char *worktree;
 	size_t i, len;
 
@@ -238,8 +239,6 @@ int git_worktree_lookup(git_worktree **out, git_repository *repo, const char *na
 
 	*out = NULL;
 
-	if ((error = git_str_joinpath(&worktree_target, repo->workdir, name)) < 0)
-		goto out;
 	if ((error = git_str_joinpath(&path, repo->commondir, "worktrees/")) < 0)
 		goto out;
 	if (!git_fs_path_exists(path.ptr) || git_fs_path_is_empty_dir(path.ptr))
@@ -252,36 +251,44 @@ int git_worktree_lookup(git_worktree **out, git_repository *repo, const char *na
 	found = 0;
 
 	git_vector_foreach(&worktrees, i, worktree) {
-		printf("found worktree: %s\n", worktree);
+		/* printf("found worktree: %s\n", worktree); */
 		git_str_truncate(&path, len);
 		git_str_puts(&path, worktree);
 
 		if (is_worktree_private_directory(&path)) {
+			/* printf("getting worktree_gitdir\n"); */
 			if ((error = get_worktree_gitdir_from_private_directory(&worktree_dir, &path)) < 0) {
-				printf("something went wrong\n");
+				/* printf("something went wrong\n"); */
 				goto out;
 			}
-			printf("comparing: \n%s\n%s\n", worktree_dir.ptr, worktree_target.ptr);
-			if (strcmp(worktree_dir.ptr, worktree_target.ptr) == 0) {
-				printf("MATCHES");
+			/* printf("found worktree dir: %s\n", worktree_dir.ptr); */
+			/* printf("basename1\n"); */
+			basename1 = git_fs_path_basename(worktree_dir.ptr);
+			/* printf("basename2\n"); */
+			basename2 = git_fs_path_basename(name);
+			/* printf("comparing: \n%s\n%s\n", basename1, basename2); */
+
+			if (strcmp(basename1, basename2) == 0) {
+				/* printf("MATCHES"); */
 				if ((error = (open_worktree_dir(out, git_repository_workdir(repo), path.ptr, name))) < 0) {
-					printf("something went wrong\n");
+					/* printf("something went wrong\n"); */
 					goto out;
 				}
 				found = 1;
 				break;
 			}
-			printf("NOT MATCHED\n");
+			/* printf("NOT MATCHED\n"); */
 		}
 	}
 out:
 
-	printf("git_worktree_lookup() found %d\n", found);
-	printf("git_worktree_lookup() error %d\n", error);
+	/* printf("git_worktree_lookup() found %d\n", found); */
+	/* printf("git_worktree_lookup() error %d\n", error); */
 	if (error < 0) {
-		printf("git_worktree_lookup() exists with %d\n", error);
+		/* printf("git_worktree_lookup() exists with %d\n", error); */
 		return error;
 	}
+	/* printf("git_worktree_lookup() exists with %d\n", (found == 0) ? -1 : 0); */
 	return (found == 0) ? -1 : 0;
 }
 
@@ -440,7 +447,7 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 	memcpy(&coopts, &wtopts.checkout_options, sizeof(coopts));
 
 	if (wtopts.ref) {
-		printf("we actually have a ref to check out!\n");
+		/* printf("we actually have a ref to check out!\n"); */
 		if (!git_reference_is_branch(wtopts.ref)) {
 			git_error_set(GIT_ERROR_WORKTREE, "reference is not a branch");
 			err = -1;
@@ -452,7 +459,7 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 			err = -1;
 			goto out;
 		}
-		printf("and the ref looks valid!\n");
+		/* printf("and the ref looks valid!\n"); */
 	}
 
 	/* Create gitdir directory ".git/worktrees/$(basename <name>)", with
@@ -539,10 +546,10 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 
 	/* Set up worktree reference */
 	if (wtopts.ref) {
-		printf("copying the given ref\n");
+		/* printf("copying the given ref\n"); */
 		if ((err = git_reference_dup(&ref, wtopts.ref)) < 0)
 			goto out;
-		printf("done copying the given ref\n");
+		/* printf("done copying the given ref\n"); */
 	} else {
 		if ((err = git_repository_head(&head, repo)) < 0)
 			goto out;
@@ -553,20 +560,20 @@ int git_worktree_add(git_worktree **out, git_repository *repo,
 	}
 
 	/* Set worktree's HEAD */
-	printf("we are now making sure the head points to the given ref\n");
+	/* printf("we are now making sure the head points to the given ref\n"); */
 	if ((err = git_repository_create_head(gitdir.ptr, git_reference_name(ref))) < 0)
 		goto out;
 	if ((err = git_repository_open(&wt, wddir.ptr)) < 0)
 		goto out;
 
-	printf("git_worktree_add() | gitdir path:    %s\n", wt->gitdir);
-	printf("git_worktree_add() | commondir path: %s\n", wt->commondir);
-	printf("git_worktree_add() | workdir path:   %s\n", wt->workdir);
+	/* printf("git_worktree_add() | gitdir path:    %s\n", wt->gitdir); */
+	/* printf("git_worktree_add() | commondir path: %s\n", wt->commondir); */
+	/* printf("git_worktree_add() | workdir path:   %s\n", wt->workdir); */
 
 	/* Checkout worktree's HEAD */
 	if ((err = git_checkout_head(wt, &coopts)) < 0)
 		goto out;
-	printf("done with pointing the head to the given ref\n");
+	/* printf("done with pointing the head to the given ref\n"); */
 
 	/* Load result */
 	if ((err = git_worktree_lookup(out, repo, worktree)) < 0)
@@ -583,7 +590,7 @@ out:
 	git_commit_free(commit);
 	git_repository_free(wt);
 
-	printf("git_add_worktree() exists with %d\n", err);
+	/* printf("git_add_worktree() exists with %d\n", err); */
 
 	return err;
 }

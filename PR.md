@@ -20,6 +20,25 @@ worktree. Q: Is there a way to return a warning?
 The `name` member of the `git_worktree` struct is now no longer used, as it's
 redundant with `gitdir_path`.
 
+---
+
+# About git_worktree_lookup
+
+Note that `git_worktree_lookup` is no longer meaningful. A worktree cannot be
+looked up by its name, as there is no name to speak of.
+
+In the past, this just worked because the path/name was codified inside
+`.git/worktrees`.
+
+For backwards compatibility, the function now returns the first worktree that
+has a path ending with the `name` parameter. Note that this does not work
+with invalid worktrees: If `gitdir` was pointing to something invalid (i.e. not
+a worktree), the call to `git_worktree_lookup()` still succeeded before, as the
+`gitdir` file was never read. As it's now used to get the actual worktree,
+such calls fail. What's the inpact on backwards compatibility? I'd even consider
+the new behavior better. Before `git_worktree_lookup()` just returned an invalid
+`git_worktree` struct that will fail as soon as it's passed to `git_repository_open_from_worktree()`.
+
 This functionality is encapsulated in a new internal function:
 
 `char *git_worktree__get_path_from_handle(const char *handle)`

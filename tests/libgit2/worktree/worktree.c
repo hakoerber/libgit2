@@ -171,7 +171,7 @@ void test_worktree_worktree__open_invalid_gitdir(void)
 	            "worktrees/testrepo-worktree/gitdir"));
 	cl_git_pass(git_futils_writebuffer(&buf, path.ptr, O_RDWR, 0644));
 
-	cl_git_pass(git_worktree_lookup(&wt, fixture.repo, "testrepo-worktree"));
+	cl_git_fail(git_worktree_lookup(&wt, fixture.repo, "testrepo-worktree"));
 	cl_git_fail(git_repository_open_from_worktree(&repo, wt));
 
 	git_str_dispose(&buf);
@@ -278,18 +278,18 @@ void test_worktree_worktree__add_with_explicit_branch(void)
 	opts.ref = branch;
 
 	cl_git_pass(git_str_joinpath(&path, fixture.repo->workdir, "../worktree-with-different-name"));
-	fprintf(stderr, "IN TEST | calling git_worktree_add()\n");
+	/* fprintf(stderr, "IN TEST | calling git_worktree_add()\n"); */
 	cl_git_pass(git_worktree_add(&wt, fixture.repo, "worktree-with-different-name", path.ptr, &opts));
-	fprintf(stderr, "IN TEST | worktree added\n");
-	fprintf(stderr, "IN TEST | gitdir path:    %s\n", wt->gitdir_path);
-	fprintf(stderr, "IN TEST | commondir path: %s\n", wt->commondir_path);
-	fprintf(stderr, "IN TEST | worktree path:   %s\n", wt->worktree_path);
-	fprintf(stderr, "IN TEST | git_repository_open_from_worktree()\n");
+	/* fprintf(stderr, "IN TEST | worktree added\n"); */
+	/* fprintf(stderr, "IN TEST | gitdir path:    %s\n", wt->gitdir_path); */
+	/* fprintf(stderr, "IN TEST | commondir path: %s\n", wt->commondir_path); */
+	/* fprintf(stderr, "IN TEST | worktree path:   %s\n", wt->worktree_path); */
+	/* fprintf(stderr, "IN TEST | git_repository_open_from_worktree()\n"); */
 	cl_git_pass(git_repository_open_from_worktree(&wtrepo, wt));
-	fprintf(stderr, "IN TEST | worktree opened\n");
-	fprintf(stderr, "IN TEST | gitdir path:    %s\n", wtrepo->gitdir);
-	fprintf(stderr, "IN TEST | commondir path: %s\n", wtrepo->commondir);
-	fprintf(stderr, "IN TEST | workdir path:   %s\n", wtrepo->workdir);
+	/* fprintf(stderr, "IN TEST | worktree opened\n"); */
+	/* fprintf(stderr, "IN TEST | gitdir path:    %s\n", wtrepo->gitdir); */
+	/* fprintf(stderr, "IN TEST | commondir path: %s\n", wtrepo->commondir); */
+	/* fprintf(stderr, "IN TEST | workdir path:   %s\n", wtrepo->workdir); */
 	cl_git_pass(git_repository_head(&wthead, wtrepo));
 	cl_assert_equal_s(git_reference_name(wthead), "refs/heads/worktree-with-ref");
 
