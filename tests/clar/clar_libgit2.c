@@ -1,6 +1,8 @@
+#include <unistd.h>
 #include "clar_libgit2.h"
 #include "posix.h"
 #include "fs_path.h"
+#include "futils.h"
 #include "git2/sys/repository.h"
 
 void cl_git_report_failure(
@@ -171,16 +173,33 @@ static git_repository *_cl_repo = NULL;
 
 git_repository *cl_git_sandbox_init(const char *sandbox)
 {
+	int err;
+	int *segfault;
+	char cwdbuf[200];
 	/* Get the name of the sandbox folder which will be created */
 	const char *basename = cl_fixture_basename(sandbox);
 
 	/* Copy the whole sandbox folder from our fixtures to our test sandbox
 	 * area.  After this it can be accessed with `./sandbox`
 	 */
-	cl_fixture_sandbox(sandbox);
+	fprintf(stderr, "basename: %s\n", basename);
+	cl_fixture_sandbox(basename);
 	_cl_sandbox = sandbox;
 
-	cl_git_pass(p_chdir(basename));
+	getcwd(cwdbuf, sizeof(cwdbuf));
+	fprintf(stderr, "cwd: %s\n", cwdbuf);
+
+	if (strcmp(basename, sandbox) != 0) {
+		cl_git_pass(git_futils_mkdir("dir", 0755, 0));
+		fprintf(stderr, "moving %s to %s\n", basename, sandbox);
+		err = p_rename(basename, sandbox);
+		fprintf(stderr, "err: %d\n", err);
+		cl_git_pass(err);
+	}
+
+	fprintf(stderr, "sandbox is in %s\n", sandbox);
+
+	cl_git_pass(p_chdir(sandbox));
 
 	/* If this is not a bare repo, then rename `sandbox/.gitted` to
 	 * `sandbox/.git` which must be done since we cannot store a folder
@@ -201,13 +220,24 @@ git_repository *cl_git_sandbox_init(const char *sandbox)
 		cl_git_pass(cl_rename("gitignore", ".gitignore"));
 
 	cl_git_pass(p_chdir(".."));
+	if (strcmp(basename, sandbox) != 0) {
+		cl_git_pass(p_chdir(".."));
+	}
 
+	if (strcmp(basename, sandbox) != 0) {
+		/* segfault = 0; *segfault = 1; */
+	}
+
+	fprintf(stderr, "done operating in %s\n", sandbox);
 	/* Now open the sandbox repository and make it available for tests */
-	cl_git_pass(git_repository_open(&_cl_repo, basename));
 
+	cl_git_pass(git_repository_open(&_cl_repo, sandbox));
+
+	fprintf(stderr, "repo opened %s\n", sandbox);
 	/* Adjust configs after copying to new filesystem */
 	cl_git_pass(git_repository_reinit_filesystem(_cl_repo, 0));
 
+	fprintf(stderr, "repo reinit %s\n", sandbox);
 	return _cl_repo;
 }
 

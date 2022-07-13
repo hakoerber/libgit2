@@ -269,19 +269,9 @@ clar_run_test(
 	if (_clar.last_report->status == CL_TEST_NOTRUN)
 		_clar.last_report->status = CL_TEST_OK;
 
-	if (_clar.local_cleanup != NULL)
-		_clar.local_cleanup(_clar.local_cleanup_payload);
-
-	if (cleanup->ptr != NULL)
-		cleanup->ptr();
-
 	CL_TRACE(CL_TRACE__TEST__END);
 
 	_clar.tests_ran++;
-
-	/* remove any local-set cleanup methods */
-	_clar.local_cleanup = NULL;
-	_clar.local_cleanup_payload = NULL;
 
 	if (_clar.report_errors_only) {
 		clar_report_errors(_clar.last_report);
